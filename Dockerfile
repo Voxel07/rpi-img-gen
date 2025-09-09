@@ -29,12 +29,6 @@ RUN echo "Building for architecture: ${TARGETARCH}"
 
 # Load binfmt_misc module and install dependencies
 RUN /bin/bash -c '\
-  # Try to load binfmt_misc module or create the mount point \
-  if ! mount | grep -q binfmt_misc; then \
-    mkdir -p /proc/sys/fs/binfmt_misc && \
-    mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true; \
-  fi && \
-  \
   case "${TARGETARCH}" in \
     arm64) \
       echo "Building for arm64" && \
@@ -71,10 +65,6 @@ RUN /bin/bash -c '\
         fdisk \
         gpg \
         systemd-container && \
-      \
-      # Register qemu interpreters \
-      update-binfmts --enable qemu-arm 2>/dev/null || true && \
-      update-binfmts --enable qemu-aarch64 2>/dev/null || true && \
       \
       # Skip the original install_deps.sh to avoid binfmt_misc checks \
       echo "Dependencies installed manually, skipping rpi-image-gen/install_deps.sh" \
