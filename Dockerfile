@@ -27,7 +27,14 @@ RUN git clone --no-checkout https://github.com/raspberrypi/rpi-image-gen.git && 
 ARG TARGETARCH
 RUN echo "Building for architecture: ${TARGETARCH}"
 
+# Load binfmt_misc module and install dependencies
 RUN /bin/bash -c '\
+  # Try to load binfmt_misc module or create the mount point \
+  if ! mount | grep -q binfmt_misc; then \
+    mkdir -p /proc/sys/fs/binfmt_misc && \
+    mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true; \
+  fi && \
+  \
   case "${TARGETARCH}" in \
     arm64) \
       echo "Building for arm64" && \
@@ -37,16 +44,11 @@ RUN /bin/bash -c '\
     amd64) \
       echo "Building for amd64 with cross-compilation support" && \
       \
-      # Patch dependencies_check to bypass binfmt_misc requirement \
-      if [ -f rpi-image-gen/scripts/dependencies_check ]; then \
-        sed -i "s|\"\${binfmt_misc_required}\" == \"1\"|false|g" rpi-image-gen/scripts/dependencies_check; \
-      else \
-        echo "No dependencies_check file to patch"; \
-      fi && \
-      \
-      # Install additional amd64 dependencies for cross-compilation \
+      # Install all dependencies manually to avoid rpi-image-gen checks \
       apt-get update && \
       apt-get install --no-install-recommends -y \
+        binfmt-support \
+        qemu-user-static \
         dirmngr \
         slirp4netns \
         quilt \
@@ -57,16 +59,25 @@ RUN /bin/bash -c '\
         libarchive-tools \
         xxd \
         file \
-        kmod \
         bc \
         pigz \
         arch-test \
         dosfstools \
         zip \
-        unzip && \
+        unzip \
+        python3 \
+        python3-debian \
+        python3-distutils \
+        fdisk \
+        gpg \
+        systemd-container && \
       \
-      # Run the patched install script \
-      rpi-image-gen/install_deps.sh \
+      # Register qemu interpreters \
+      update-binfmts --enable qemu-arm 2>/dev/null || true && \
+      update-binfmts --enable qemu-aarch64 2>/dev/null || true && \
+      \
+      # Skip the original install_deps.sh to avoid binfmt_misc checks \
+      echo "Dependencies installed manually, skipping rpi-image-gen/install_deps.sh" \
       ;; \
     *) \
       echo "Unsupported architecture: ${TARGETARCH}. Only arm64 and amd64 are supported." && \

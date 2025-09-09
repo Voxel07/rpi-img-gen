@@ -10,7 +10,8 @@ services:
         RPIIG_GIT_SHA: e5766aa9b2f5a6a09b241c5553833aaa3d4ac4c3
     volumes:
       - ./macmind:/home/imagegen/macmind
-      - /proc:/proc:ro
+      - /proc:/proc
+      - /proc/sys/fs/binfmt_misc:/proc/sys/fs/binfmt_misc
     privileged: true
     cap_add:
       - SYS_ADMIN
