@@ -1,0 +1,7 @@
+# Comments are supported
+DEVICE_HOSTNAME=macmind
+# All variables will be translated to lower case and made available to hooks
+device_user1=macmind
+dEvIcE_UsER1pASs=macmind
+# Variables set in the .cfg file can be overridden
+IMAGE_NAME=macmind

@@ -1,0 +1,39 @@
+name: Build and Release Raspberry Pi Image
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build and run image generation
+        run: |
+          chmod +x ./build.sh
+          ./build.sh
+
+      - name: Find generated image
+        id: find_image
+        run: |
+          IMAGE_PATH=$(find macmind/deploy -name 'macmind-*.img' | sort | tail -n 1)
+          echo "image_path=$IMAGE_PATH" >> $GITHUB_OUTPUT
+
+      - name: Upload image to release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ${{ steps.find_image.outputs.image_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
