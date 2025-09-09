@@ -29,7 +29,7 @@ RUN /bin/bash -c '\
       Override binfmt_misc_required flag and install known amd64 deps that are not \
       provided in the depends file" && \
 
-      sed -i "s|\"\${binfmt_misc_required}\" == \"1\"|! -z \"\"|g" rpi-image-gen/scripts/dependencies_check && \
+      [ -f rpi-image-gen/scripts/dependencies_check ] && sed -i "s|\"\${binfmt_misc_required}\" == \"1\"|! -z \"\"|g" rpi-image-gen/scripts/dependencies_check || echo "No dependencies_check file to patch" && \
 
       if cat /proc/filesystems | grep -q binfmt_misc; then \
         echo \"binfmt_misc is supported\" ; \
@@ -65,3 +65,4 @@ USER ${USER}
 WORKDIR /home/${USER}
 
 RUN /bin/bash -c 'cp -r /rpi-image-gen ~/'
+RUN git submodule update --init --recursive
