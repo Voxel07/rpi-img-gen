@@ -1,5 +1,6 @@
 FROM debian:bookworm AS base
 
+# Install base dependencies
 RUN apt-get update && apt-get install --no-install-recommends -y \
       build-essential \
       curl \
@@ -8,39 +9,44 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
       sudo \
       gpg \
       gpg-agent \
+      binfmt-support \
+      qemu-user-static \
   && rm -rf /var/lib/apt/lists/*
 
+# Add Raspberry Pi GPG key
 RUN curl -fsSL https://archive.raspberrypi.com/debian/raspberrypi.gpg.key \
   | gpg --dearmor > /usr/share/keyrings/raspberrypi-archive-keyring.gpg
 
-ARG RPIIG_GIT_SHA e5766aa9b2f5a6a09b241c5553833aaa3d4ac4c3
-RUN git clone --no-checkout https://github.com/raspberrypi/rpi-image-gen.git && cd rpi-image-gen && git checkout ${RPIIG_GIT_SHA}
+# Clone rpi-image-gen at specific commit
+ARG RPIIG_GIT_SHA=e5766aa9b2f5a6a09b241c5553833aaa3d4ac4c3
+RUN git clone --no-checkout https://github.com/raspberrypi/rpi-image-gen.git && \
+    cd rpi-image-gen && \
+    git checkout ${RPIIG_GIT_SHA}
 
+# Architecture-specific setup
 ARG TARGETARCH
 RUN echo "Building for architecture: ${TARGETARCH}"
-# Example: Install different packages based on architecture
+
 RUN /bin/bash -c '\
   case "${TARGETARCH}" in \
-    arm64) echo "Building for arm64" && \
+    arm64) \
+      echo "Building for arm64" && \
       apt-get update && \
-      rpi-image-gen/install_deps.sh ;; \
-    amd64) echo "Try to Build for amd64. \
-      As of Apr 2025 rpi-image-gen install_deps exits if arm arch is not detected. \
-      Override binfmt_misc_required flag and install known amd64 deps that are not \
-      provided in the depends file" && \
-
-      [ -f rpi-image-gen/scripts/dependencies_check ] && sed -i "s|\"\${binfmt_misc_required}\" == \"1\"|! -z \"\"|g" rpi-image-gen/scripts/dependencies_check || echo "No dependencies_check file to patch" && \
-
-      if cat /proc/filesystems | grep -q binfmt_misc; then \
-        echo \"binfmt_misc is supported\" ; \
+      rpi-image-gen/install_deps.sh \
+      ;; \
+    amd64) \
+      echo "Building for amd64 with cross-compilation support" && \
+      \
+      # Patch dependencies_check to bypass binfmt_misc requirement \
+      if [ -f rpi-image-gen/scripts/dependencies_check ]; then \
+        sed -i "s|\"\${binfmt_misc_required}\" == \"1\"|false|g" rpi-image-gen/scripts/dependencies_check; \
       else \
-        echo \"binfmt_misc is not supported. Install binfmt-support on your host machine\" ; \
-        exit 1 ; \
+        echo "No dependencies_check file to patch"; \
       fi && \
-
+      \
+      # Install additional amd64 dependencies for cross-compilation \
       apt-get update && \
       apt-get install --no-install-recommends -y \
-        qemu-user-static \
         dirmngr \
         slirp4netns \
         quilt \
@@ -54,15 +60,36 @@ RUN /bin/bash -c '\
         kmod \
         bc \
         pigz \
-        arch-test && \
-      rpi-image-gen/install_deps.sh ;; \
-    *) echo "Architecture $ARCH is not arm64 or amd64. Skipping package installation." ;; \
+        arch-test \
+        dosfstools \
+        zip \
+        unzip && \
+      \
+      # Run the patched install script \
+      rpi-image-gen/install_deps.sh \
+      ;; \
+    *) \
+      echo "Unsupported architecture: ${TARGETARCH}. Only arm64 and amd64 are supported." && \
+      exit 1 \
+      ;; \
   esac'
 
-ENV USER imagegen
-RUN useradd -u 4000 -ms /bin/bash "$USER" && echo "${USER}:${USER}" | chpasswd && adduser ${USER} sudo # only add to sudo if build scripts require it
+# Create non-root user
+ENV USER=imagegen
+RUN useradd -u 4000 -ms /bin/bash "$USER" && \
+    echo "${USER}:${USER}" | chpasswd && \
+    adduser ${USER} sudo && \
+    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Switch to user and setup workspace
 USER ${USER}
 WORKDIR /home/${USER}
 
-RUN /bin/bash -c 'cp -r /rpi-image-gen ~/'
+# Copy rpi-image-gen to user directory
+RUN cp -r /rpi-image-gen ~/rpi-image-gen
+
+# Initialize git submodules
+WORKDIR /home/${USER}/rpi-image-gen
 RUN git submodule update --init --recursive
+
+WORKDIR /home/${USER}

@@ -1,9 +1,31 @@
+version: '3.8'
+
 services:
-    rpi_imagegen:
-        build: .
-        privileged: true
-        stdin_open: true
-        tty: true
-        image: rpi-imagegen:latest
-        volumes:
-            - ./macmind:/home/imagegen/macmind
+  rpi_imagegen:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TARGETARCH: amd64
+        RPIIG_GIT_SHA: e5766aa9b2f5a6a09b241c5553833aaa3d4ac4c3
+    volumes:
+      - ./macmind:/home/imagegen/macmind
+      - /proc:/proc:ro
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - MKNOD
+    devices:
+      - /dev/loop-control
+      - /dev/loop0
+      - /dev/loop1
+      - /dev/loop2
+      - /dev/loop3
+      - /dev/loop4
+      - /dev/loop5
+      - /dev/loop6
+      - /dev/loop7
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
