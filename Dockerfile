@@ -1,96 +1,127 @@
-FROM debian:bookworm AS base
+#!/bin/bash
 
-# Install base dependencies
-RUN apt-get update && apt-get install --no-install-recommends -y \
-      build-essential \
-      curl \
-      git \
-      ca-certificates \
-      sudo \
-      gpg \
-      gpg-agent \
-      binfmt-support \
-      qemu-user-static \
-  && rm -rf /var/lib/apt/lists/*
+set -euo pipefail
 
-# Add Raspberry Pi GPG key
-RUN curl -fsSL https://archive.raspberrypi.com/debian/raspberrypi.gpg.key \
-  | gpg --dearmor > /usr/share/keyrings/raspberrypi-archive-keyring.gpg
+RPI_BUILD_USER="imagegen"
+RPI_CUSTOMIZATIONS_DIR="voxel"
+RPI_CONFIG="voxel"
+RPI_OPTIONS="voxel"
+RPI_IMAGE_NAME="voxel"
+IMAGE_TAG="rpi-imagegen:latest"
 
-# Clone rpi-image-gen at specific commit
-ARG RPIIG_GIT_SHA=e5766aa9b2f5a6a09b241c5553833aaa3d4ac4c3
-RUN git clone --no-checkout https://github.com/raspberrypi/rpi-image-gen.git && \
-    cd rpi-image-gen && \
-    git checkout ${RPIIG_GIT_SHA}
+# Create output directory if it doesn't exist
+mkdir -p "${RPI_CUSTOMIZATIONS_DIR}/deploy"
 
-# Architecture-specific setup
-ARG TARGETARCH
-RUN echo "Building for architecture: ${TARGETARCH}"
+echo "🔨 Building Docker image directly..."
+docker build \
+  --build-arg TARGETARCH=amd64 \
+  --build-arg RPIIG_GIT_SHA=e5766aa9b2f5a6a09b241c5553833aaa3d4ac4c3 \
+  -t ${IMAGE_TAG} \
+  .
 
-# Load binfmt_misc module and install dependencies
-RUN /bin/bash -c '\
-  case "${TARGETARCH}" in \
-    arm64) \
-      echo "Building for arm64" && \
-      apt-get update && \
-      rpi-image-gen/install_deps.sh \
-      ;; \
-    amd64) \
-      echo "Building for amd64 with cross-compilation support" && \
-      \
-      # Install all dependencies manually to avoid rpi-image-gen checks \
-      apt-get update && \
-      apt-get install --no-install-recommends -y \
-        binfmt-support \
-        qemu-user-static \
-        dirmngr \
-        slirp4netns \
-        quilt \
-        parted \
-        debootstrap \
-        zerofree \
-        libcap2-bin \
-        libarchive-tools \
-        xxd \
-        file \
-        bc \
-        pigz \
-        arch-test \
-        dosfstools \
-        zip \
-        unzip \
-        python3 \
-        python3-debian \
-        python3-distutils \
-        fdisk \
-        gpg \
-        systemd-container && \
-      \
-      # Skip the original install_deps.sh to avoid binfmt_misc checks \
-      echo "Dependencies installed manually, skipping rpi-image-gen/install_deps.sh" \
-      ;; \
-    *) \
-      echo "Unsupported architecture: ${TARGETARCH}. Only arm64 and amd64 are supported." && \
-      exit 1 \
-      ;; \
-  esac'
+echo "🚀 Running image generation in container..."
 
-# Create non-root user
-ENV USER=imagegen
-RUN useradd -u 4000 -ms /bin/bash "$USER" && \
-    echo "${USER}:${USER}" | chpasswd && \
-    adduser ${USER} sudo && \
-    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+# Run the container with all necessary privileges and mounts
+docker run \
+  --rm \
+  --privileged \
+  -v "$(pwd)/${RPI_CUSTOMIZATIONS_DIR}:/home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}" \
+  -v /dev:/dev \
+  --cap-add=SYS_ADMIN \
+  --cap-add=MKNOD \
+  --cap-add=SYS_MODULE \
+  --security-opt seccomp=unconfined \
+  --security-opt apparmor=unconfined \
+  -e DEBIAN_FRONTEND=noninteractive \
+  ${IMAGE_TAG} \
+  bash -c "
+    set -e
+    
+    echo '🔧 Setting up container environment...'
+    
+    # Setup binfmt_misc
+    if [ ! -f /proc/sys/fs/binfmt_misc/status ]; then
+      echo 'Mounting binfmt_misc...'
+      mkdir -p /proc/sys/fs/binfmt_misc
+      mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || echo 'binfmt_misc mount failed, continuing...'
+    fi
+    
+    # Register QEMU interpreters
+    echo 'Setting up QEMU interpreters...'
+    update-binfmts --enable qemu-aarch64 2>/dev/null || echo 'qemu-aarch64 setup failed'
+    update-binfmts --enable qemu-arm 2>/dev/null || echo 'qemu-arm setup failed'
+    
+    # Verify key dependencies
+    echo '🔍 Verifying dependencies...'
+    which rsync genimage mtools python3 || echo 'Some tools missing'
+    
+    cd /home/${RPI_BUILD_USER}/rpi-image-gen
+    
+    # Show available configurations
+    echo '📋 Available configurations:'
+    ls -la /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/ || echo 'No customization directory found'
+    
+    # Create output directory structure
+    echo '📁 Creating output directories...'
+    mkdir -p work/${RPI_IMAGE_NAME}/deploy/
+    
+    echo '📦 Starting rpi-image-gen build...'
+    echo 'Command: ./build.sh -D /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/ -c ${RPI_CONFIG} -o /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/${RPI_OPTIONS}.options'
+    
+    # Run the build
+    ./build.sh \
+      -D /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/ \
+      -c ${RPI_CONFIG} \
+      -o /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/${RPI_OPTIONS}.options || {
+      
+      echo '❌ Build failed. Diagnostic information:'
+      echo '--- Checking work directory ---'
+      find work -type f -name '*.img' 2>/dev/null || echo 'No .img files found'
+      find work -type f | head -10 || echo 'No files in work directory'
+      
+      echo '--- Checking logs ---'
+      find work -name '*.log' -exec tail -20 {} + 2>/dev/null || echo 'No log files found'
+      
+      exit 1
+    }
+    
+    echo '✅ Build completed successfully!'
+    
+    # List generated files
+    echo '📁 Generated files:'
+    find work -name '*.img' -exec ls -lh {} + || echo 'No .img files found'
+    
+    # Copy to mounted volume (this should be automatically available)
+    if [ -f work/${RPI_IMAGE_NAME}/deploy/${RPI_IMAGE_NAME}.img ]; then
+      cp work/${RPI_IMAGE_NAME}/deploy/${RPI_IMAGE_NAME}.img /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/deploy/
+      echo '📋 Image copied to output directory'
+    else
+      echo '⚠️ Expected image file not found, checking alternatives...'
+      find work -name '*.img' -exec cp {} /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/deploy/ \;
+    fi
+"
 
-# Switch to user and setup workspace
-USER ${USER}
-WORKDIR /home/${USER}
+# Generate timestamp for filename
+TIMESTAMP=$(date +%m-%d-%Y-%H%M)
 
-# Copy rpi-image-gen to user directory
-RUN cp -r /rpi-image-gen ~/rpi-image-gen
-
-# Initialize git submodules
-WORKDIR /home/${USER}/rpi-image-gen
-RUN git submodule update --init --recursive
-
-WORKDIR /home/${USER}
+# Find the generated image file
+if ls "${RPI_CUSTOMIZATIONS_DIR}/deploy"/*.img 1> /dev/null 2>&1; then
+  # Rename to include timestamp
+  for img_file in "${RPI_CUSTOMIZATIONS_DIR}/deploy"/*.img; do
+    if [ -f "$img_file" ]; then
+      new_name="${RPI_CUSTOMIZATIONS_DIR}/deploy/${RPI_IMAGE_NAME}-${TIMESTAMP}.img"
+      mv "$img_file" "$new_name"
+      echo "✅ Build completed successfully!"
+      echo "🚀 Output image: ${new_name}"
+      
+      FILE_SIZE=$(du -h "$new_name" | cut -f1)
+      echo "📊 Image size: ${FILE_SIZE}"
+      break
+    fi
+  done
+else
+  echo "❌ No image files found in output directory"
+  echo "📁 Contents of ${RPI_CUSTOMIZATIONS_DIR}/deploy/:"
+  ls -la "${RPI_CUSTOMIZATIONS_DIR}/deploy/" || echo "Directory doesn't exist"
+  exit 1
+fi

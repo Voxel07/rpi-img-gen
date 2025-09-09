@@ -1,7 +1,7 @@
 # Comments are supported
-DEVICE_HOSTNAME=macmind
+DEVICE_HOSTNAME=voxel
 # All variables will be translated to lower case and made available to hooks
-device_user1=macmind
-dEvIcE_UsER1pASs=macmind
+device_user1=voxel
+dEvIcE_UsER1pASs=voxel
 # Variables set in the .cfg file can be overridden
-IMAGE_NAME=macmind
+IMAGE_NAME=voxel

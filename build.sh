@@ -5,10 +5,10 @@ set -euo pipefail
 BUILD_ID=${RANDOM}
 RPI_BUILD_SVC="rpi_imagegen"
 RPI_BUILD_USER="imagegen"
-RPI_CUSTOMIZATIONS_DIR="macmind"
-RPI_CONFIG="macmind"
-RPI_OPTIONS="macmind"
-RPI_IMAGE_NAME="macmind"
+RPI_CUSTOMIZATIONS_DIR="voxel"
+RPI_CONFIG="voxel"
+RPI_OPTIONS="voxel"
+RPI_IMAGE_NAME="voxel"
 
 ensure_cleanup() {
   echo "Cleanup containers..."
@@ -52,19 +52,32 @@ docker compose run --rm --name ${RPI_BUILD_SVC}-${BUILD_ID} ${RPI_BUILD_SVC} bas
     mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || echo 'binfmt_misc mount failed, continuing...'
   fi
   
-  # Register QEMU if not already registered
-  if [ ! -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
-    echo 'Registering QEMU interpreters...'
-    /usr/lib/binfmt-support/qemu-user-static-aarch64 --reset || true
-  fi
+  # Register QEMU interpreters properly
+  echo 'Setting up QEMU interpreters...'
+  update-binfmts --enable qemu-aarch64 2>/dev/null || echo 'qemu-aarch64 setup failed, continuing...'
+  update-binfmts --enable qemu-arm 2>/dev/null || echo 'qemu-arm setup failed, continuing...'
   
   cd /home/${RPI_BUILD_USER}/rpi-image-gen
   
+  # Verify dependencies are properly installed
+  echo '🔍 Checking dependencies...'
+  ls -la /usr/bin/rsync /usr/bin/genimage /usr/bin/mtools || echo 'Some dependencies missing, but continuing...'
+  
   echo '📦 Starting rpi-image-gen build...'
-  sudo -E ./build.sh -D /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/ -c ${RPI_CONFIG} -o /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/${RPI_OPTIONS}.options
+  echo 'Build command: sudo -E ./build.sh -D /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/ -c ${RPI_CONFIG} -o /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/${RPI_OPTIONS}.options'
+  
+  # Create output directory structure
+  sudo mkdir -p /home/${RPI_BUILD_USER}/rpi-image-gen/work/${RPI_IMAGE_NAME}/deploy/
+  
+  sudo -E ./build.sh -D /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/ -c ${RPI_CONFIG} -o /home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}/${RPI_OPTIONS}.options || {
+    echo '❌ Build failed, checking for partial results...'
+    find /home/${RPI_BUILD_USER}/rpi-image-gen/work -name '*.img' 2>/dev/null || echo 'No .img files found'
+    find /home/${RPI_BUILD_USER}/rpi-image-gen/work -type f -name '*' | head -20 || echo 'No files in work directory'
+    exit 1
+  }
   
   echo '✅ Build completed!'
-  ls -la work/${RPI_IMAGE_NAME}/deploy/
+  ls -la work/${RPI_IMAGE_NAME}/deploy/ || ls -la work/ || echo 'No output directory found'
 " && echo "📋 Build container completed successfully"
 
 # The container is removed automatically with --rm, but we still need to copy the file

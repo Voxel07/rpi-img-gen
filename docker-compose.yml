@@ -7,7 +7,7 @@ services:
         TARGETARCH: amd64
         RPIIG_GIT_SHA: e5766aa9b2f5a6a09b241c5553833aaa3d4ac4c3
     volumes:
-      - ./macmind:/home/imagegen/macmind
+      - ./voxel:/home/imagegen/voxel
       - /dev:/dev
     privileged: true
     environment:

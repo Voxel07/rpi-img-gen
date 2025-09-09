@@ -45,7 +45,7 @@
 [REMOVED] libtext-glob-perl: (Version 0.11-3)
 [REMOVED] cryptsetup: (Version 2:2.6.1-4~DEB12U2)
 [REMOVED] cryptsetup-bin: (Version 2:2.6.1-4~DEB12U2)
-[REMOVED] macminds: (Version 2025-03-31)
+[REMOVED] voxels: (Version 2025-09-10)
 [ADDED  ] alsa-topology-conf: (Version 1.2.5.1-2) (License NOASSERTION)
 [ADDED  ] alsa-ucm-conf: (Version 1.2.8-1) (License NOASSERTION)
 [ADDED  ] apparmor: (Version 3.0.8-3) (License NOASSERTION)

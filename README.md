@@ -1,6 +1,6 @@
 # rpi-image-gen-example
 
-Build a default system with auto login to the macmind user.
+Build a default system with auto login to the voxel user.
 
 This has been tested on both ARM64 Mac and AMD64 Mac laptops.
 
@@ -24,7 +24,7 @@ Use the Raspberry Pi Imager tool to install the img file on an SD card or USB st
 
 [![Watch and Like the recorded video for this project on YouTube](https://img.youtube.com/vi/kxl_swm93XE/maxresdefault.jpg)](https://www.youtube.com/watch?v=kxl_swm93XE)
 
-**[Subscribe to the channel for more similar content](https://www.youtube.com/@macmind-io?sub_confirmation=1)
+**[Subscribe to the channel for more similar content](https://www.youtube.com/@voxel-io?sub_confirmation=1)
 
 Please refer to https://github.com/raspberrypi/rpi-image-gen for more information rpi-image-gen
 
