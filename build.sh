@@ -21,35 +21,39 @@ docker build \
 
 echo "🚀 Running image generation in container..."
 
+# Detect if running in CI
+IN_CI="${CI:-false}"
+
+DOCKER_RUN_FLAGS=""
+if [ "$IN_CI" != "true" ]; then
+  DOCKER_RUN_FLAGS="--privileged -v /dev:/dev --cap-add=SYS_ADMIN --cap-add=MKNOD --cap-add=SYS_MODULE --security-opt seccomp=unconfined --security-opt apparmor=unconfined"
+fi
+
 # Run the container with all necessary privileges and mounts
 docker run \
   --rm \
-  --privileged \
+  $DOCKER_RUN_FLAGS \
   -v "$(pwd)/${RPI_CUSTOMIZATIONS_DIR}:/home/${RPI_BUILD_USER}/${RPI_CUSTOMIZATIONS_DIR}" \
-  -v /dev:/dev \
-  --cap-add=SYS_ADMIN \
-  --cap-add=MKNOD \
-  --cap-add=SYS_MODULE \
-  --security-opt seccomp=unconfined \
-  --security-opt apparmor=unconfined \
   -e DEBIAN_FRONTEND=noninteractive \
   ${IMAGE_TAG} \
   bash -c "
     set -e
-    
-    echo '🔧 Setting up container environment...'
-    
-    # Setup binfmt_misc
-    if [ ! -f /proc/sys/fs/binfmt_misc/status ]; then
-      echo 'Mounting binfmt_misc...'
-      mkdir -p /proc/sys/fs/binfmt_misc
-      mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || echo 'binfmt_misc mount failed, continuing...'
+
+    if [ \"$IN_CI\" != \"true\" ]; then
+      # Setup binfmt_misc
+      if [ ! -f /proc/sys/fs/binfmt_misc/status ]; then
+        echo 'Mounting binfmt_misc...'
+        mkdir -p /proc/sys/fs/binfmt_misc
+        mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || echo 'binfmt_misc mount failed, continuing...'
+      fi
+
+      # Register QEMU interpreters
+      echo 'Setting up QEMU interpreters...'
+      update-binfmts --enable qemu-aarch64 2>/dev/null || echo 'qemu-aarch64 setup failed'
+      update-binfmts --enable qemu-arm 2>/dev/null || echo 'qemu-arm setup failed'
     fi
-    
-    # Register QEMU interpreters
-    echo 'Setting up QEMU interpreters...'
-    update-binfmts --enable qemu-aarch64 2>/dev/null || echo 'qemu-aarch64 setup failed'
-    update-binfmts --enable qemu-arm 2>/dev/null || echo 'qemu-arm setup failed'
+
+    echo '🔧 Setting up container environment...'
     
     # Verify key dependencies
     echo '🔍 Verifying dependencies...'
